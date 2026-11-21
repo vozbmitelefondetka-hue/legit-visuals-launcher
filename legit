@@ -1,0 +1,134 @@
+import os
+import requests
+import zipfile
+import json
+import subprocess
+import shutil
+
+# --- Настройки ---
+LAUNCHER_NAME = "Legit Visuals"
+VERSION = "1.8.9"  # Легаси версия для примера
+BASE_DIR = os.path.join(os.path.expanduser("~"), ".legitvisuals")
+BIN_DIR = os.path.join(BASE_DIR, "bin")
+VERSIONS_DIR = os.path.join(BASE_DIR, "versions", VERSION)
+JSON_PATH = os.path.join(VERSIONS_DIR, f"{VERSION}.json")
+JAR_PATH = os.path.join(VERSIONS_DIR, f"{VERSION}.jar")
+NATIVES_DIR = os.path.join(VERSIONS_DIR, "natives")
+
+# URL официальных библиотек (упрощенный пример, для полного лаунчера нужно выкачивать все зависимости из JSON)
+MANIFEST_URL = "https://launchermeta.mojang.com/mc/game/version_manifest.json"
+
+def download_file(url, dest):
+    print(f"Скачивание {url}...")
+    try:
+        r = requests.get(url, stream=True)
+        r.raise_for_status()
+        with open(dest, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+    except Exception as e:
+        print(f"Ошибка при скачивании: {e}")
+        return False
+    return True
+
+def setup_directories():
+    if not os.path.exists(BASE_DIR):
+        os.makedirs(BASE_DIR)
+    if not os.path.exists(BIN_DIR):
+        os.makedirs(BIN_DIR)
+    if not os.path.exists(VERSIONS_DIR):
+        os.makedirs(VERSIONS_DIR)
+
+def get_version_url():
+    print("Получение манифеста версий...")
+    r = requests.get(MANIFEST_URL)
+    manifest = r.json()
+    for v in manifest['versions']:
+        if v['id'] == VERSION:
+            return v['url']
+    return None
+
+def download_minecraft():
+    if os.path.exists(JAR_PATH):
+        print("Клиент уже скачан.")
+        return True
+
+    version_url = get_version_url()
+    if not version_url:
+        print("Версия не найдена.")
+        return False
+
+    version_data = requests.get(version_url).json()
+    
+    # Скачивание клиента
+    client_url = version_data['downloads']['client']['url']
+    if not download_file(client_url, JAR_PATH):
+        return False
+
+    # Скачивание и распаковка библиотек (упрощенно: скачаем только основные)
+    # В реальном проекте здесь нужен парсинг всего списка 'libraries' из JSON
+    print("Скачивание базовых библиотек...")
+    # Для примера просто создадим папку libs
+    libs_dir = os.path.join(BASE_DIR, "libraries")
+    if not os.path.exists(libs_dir):
+        os.makedirs(libs_dir)
+        
+    return True
+
+def build_classpath():
+    # В реальном лаунчере нужно собрать пути ко всем .jar файлам из JSON
+    # Здесь мы просто укажем путь к основному клиенту
+    cp = JAR_PATH
+    # Добавляем путь к папке библиотек (пример)
+    libs_dir = os.path.join(BASE_DIR, "libraries")
+    if os.path.exists(libs_dir):
+        for root, dirs, files in os.walk(libs_dir):
+            for file in files:
+                if file.endswith(".jar"):
+                    cp += os.pathsep + os.path.join(root, file)
+    return cp
+
+def launch():
+    print(f"Запуск Minecraft {VERSION}...")
+    java_path = "java" # Или полный путь к java.exe, например C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.12.7-hotspot\\bin\\java.exe
+    
+    # Классический вайб: маленькое окно, без заголовка (для этого нужен LWJGL, здесь упрощено)
+    # В реальности для "легаси вайба" без рамок используют сторонние моды (например, Borderless Mining) или моды на управление окном.
+    
+    classpath = build_classpath()
+    
+    # Основные аргументы для легаси-вайба (память, нативы)
+    natives_path = NATIVES_DIR
+    if not os.path.exists(natives_path):
+        os.makedirs(natives_path)
+        
+    args = [
+        java_path,
+        "-Xmx2G", # 2 ГБ ОЗУ
+        "-Xms1G", # Выделить сразу 1 ГБ
+        "-Djava.library.path=" + natives_path,
+        "-cp", classpath,
+        "net.minecraft.client.main.Main",
+        "--version", VERSION,
+        "--gameDir", BASE_DIR,
+        "--assetsDir", os.path.join(BASE_DIR, "assets"),
+        "--assetIndex", "1.8", # Индекс ассетов для 1.8.9
+        "--username", "LegitUser",
+        "--uuid", "1234567890abcdef",
+        "--accessToken", "0",
+        "--userType", "mojang"
+    ]
+    
+    try:
+        subprocess.Popen(args)
+    except FileNotFoundError:
+        print("Java не найдена. Установите Java и добавьте её в PATH.")
+
+def main():
+    setup_directories()
+    if download_minecraft():
+        launch()
+
+if __name__ == "__main__":
+    print(f"=== {LAUNCHER_NAME} | Version {VERSION} ===")
+    main()
